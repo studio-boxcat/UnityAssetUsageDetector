@@ -187,9 +187,6 @@ namespace AssetUsageDetectorNamespace
 		private bool searchPrefabConnections;
 		private bool searchMonoBehavioursForScript;
 		private bool searchTextureReferences;
-#if UNITY_2018_1_OR_NEWER
-		private bool searchShaderGraphsForSubGraphs;
-#endif
 
 		private bool searchSerializableVariablesOnly;
 		private bool prevSearchSerializableVariablesOnly;
@@ -205,22 +202,9 @@ namespace AssetUsageDetectorNamespace
 		private readonly FieldInfoGetter fieldInfoGetter = (FieldInfoGetter) Delegate.CreateDelegate( typeof( FieldInfoGetter ), typeof( Editor ).Assembly.GetType( "UnityEditor.ScriptAttributeUtility" ).GetMethod( "GetFieldInfoFromProperty", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 #endif
 
-		private readonly Func<Object> lightmapSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( LightmapEditorSettings ).GetMethod( "GetLightmapSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-		private readonly Func<Object> renderSettingsGetter = (Func<Object>) Delegate.CreateDelegate( typeof( Func<Object> ), typeof( RenderSettings ).GetMethod( "GetRenderSettings", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-#if UNITY_2021_2_OR_NEWER
-		private readonly Func<Cubemap> defaultReflectionProbeGetter = (Func<Cubemap>) Delegate.CreateDelegate( typeof( Func<Cubemap> ), typeof( RenderSettings ).GetProperty( "defaultReflection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ).GetGetMethod( true ) );
-#endif
-
 #if ASSET_USAGE_ADDRESSABLES
 		private readonly Func<SpriteAtlas, Sprite[]> spriteAtlasPackedSpritesGetter = (Func<SpriteAtlas, Sprite[]>) Delegate.CreateDelegate( typeof( Func<SpriteAtlas, Sprite[]> ), typeof( SpriteAtlasExtensions ).GetMethod( "GetPackedSprites", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
 		private readonly PropertyInfo assetReferenceSubObjectTypeGetter = typeof( AssetReference ).GetProperty( "SubOjbectType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
-#endif
-
-#if ASSET_USAGE_VFX_GRAPH
-		private static Type vfxResourceType => typeof( Editor ).Assembly.GetType( "UnityEditor.VFX.VisualEffectResource" ) ?? Array.Find( AppDomain.CurrentDomain.GetAssemblies(), ( assembly ) => assembly.GetName().Name == "UnityEditor.VFXModule" ).GetType( "UnityEditor.VFX.VisualEffectResource" );
-		private readonly Func<string, object> vfxResourceGetter = (Func<string, object>) Delegate.CreateDelegate( typeof( Func<string, object> ), vfxResourceType.GetMethod( "GetResourceAtPath", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static ) );
-		private readonly MethodInfo vfxResourceContentsGetter = vfxResourceType.GetMethod( "GetContents", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance );
-		private readonly MethodInfo vfxSerializableObjectValueGetter = Array.Find( Array.Find( AppDomain.CurrentDomain.GetAssemblies(), ( assembly ) => assembly.GetName().Name == "Unity.VisualEffectGraph.Editor" ).GetType( "UnityEditor.VFX.VFXSerializableObject" ).GetMethods( BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance ), ( methodInfo ) => methodInfo.Name == "Get" && !methodInfo.IsGenericMethod );
 #endif
 
 		private void InitializeSearchFunctionsData( Parameters searchParameters )
@@ -239,11 +223,7 @@ namespace AssetUsageDetectorNamespace
 					{ typeof( AnimatorStateMachine ), SearchAnimatorStateMachine },
 					{ typeof( AnimatorState ), SearchAnimatorState },
 					{ typeof( AnimatorStateTransition ), SearchAnimatorStateTransition },
-					{ typeof( BlendTree ), SearchBlendTree },
 					{ typeof( AnimationClip ), SearchAnimationClip },
-					{ typeof( TerrainData ), SearchTerrainData },
-					{ typeof( LightmapSettings ), SearchLightmapSettings },
-					{ typeof( RenderSettings ), SearchRenderSettings },
 #if UNITY_2017_1_OR_NEWER
 					{ typeof( SpriteAtlas ), SearchSpriteAtlas },
 #endif
@@ -265,15 +245,6 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2019_2_OR_NEWER
 					{ "asmref", SearchAssemblyDefinitionFile },
 #endif
-#if UNITY_2018_1_OR_NEWER
-					{ "shadergraph", SearchShaderGraph },
-					{ "shadersubgraph", SearchShaderGraph },
-#endif
-#if ASSET_USAGE_VFX_GRAPH
-					{ "vfx", SearchVFXGraphAsset },
-					{ "vfxoperator", SearchVFXGraphAsset },
-					{ "vfxblock", SearchVFXGraphAsset },
-#endif
 				};
 			}
 
@@ -291,12 +262,6 @@ namespace AssetUsageDetectorNamespace
 			searchPrefabConnections = false;
 			searchMonoBehavioursForScript = false;
 			searchTextureReferences = false;
-#if UNITY_2018_1_OR_NEWER
-			searchShaderGraphsForSubGraphs = false;
-#endif
-#if ASSET_USAGE_VFX_GRAPH
-			bool searchVFXGraphs = false;
-#endif
 
 			foreach( Object obj in objectsToSearchSet )
 			{
@@ -319,10 +284,6 @@ namespace AssetUsageDetectorNamespace
 				else if( obj is UnityEditorInternal.AssemblyDefinitionAsset )
 					assemblyDefinitionFilesToSearch[AssetDatabase.GetAssetPath( obj )] = obj;
 #endif
-#if ASSET_USAGE_VFX_GRAPH
-				else if( !searchVFXGraphs && ( obj is Shader || obj is Mesh || obj.GetType().Name.StartsWithFast( "PointCache" ) || obj.GetType().Name == "ShaderGraphVfxAsset" ) )
-					searchVFXGraphs = true;
-#endif
 			}
 
 			// We need to search for class/interface inheritance references manually because AssetDatabase.GetDependencies doesn't take that into account
@@ -337,10 +298,6 @@ namespace AssetUsageDetectorNamespace
 				string extension = Utilities.GetFileExtension( path );
 				if( extension == "hlsl" || extension == "cginc" || extension == "cg" || extension == "glslinc" )
 					shaderIncludesToSearchSet.Add( path );
-#if UNITY_2018_1_OR_NEWER
-				else if( extension == "shadersubgraph" )
-					searchShaderGraphsForSubGraphs = true;
-#endif
 			}
 
 			// AssetDatabase.GetDependencies doesn't take #include lines in shader source codes into consideration. If we are searching for references
@@ -364,27 +321,6 @@ namespace AssetUsageDetectorNamespace
 #if UNITY_2019_2_OR_NEWER
 				alwaysSearchedExtensionsSet.Add( "asmref" );
 #endif
-			}
-#endif
-
-#if UNITY_2018_1_OR_NEWER
-			// AssetDatabase.GetDependencies doesn't work with Shader Graph assets. We must search all Shader Graph assets in the following cases:
-			// searchTextureReferences: to find Texture references used in various nodes and properties
-			// searchShaderGraphsForSubGraphs: to find Shader Sub-graph references in other Shader Graph assets
-			// shaderIncludesToSearchSet: to find .cginc, .cg, .glslinc and .hlsl references used in Custom Function nodes
-			if( searchTextureReferences || searchShaderGraphsForSubGraphs || shaderIncludesToSearchSet.Count > 0 )
-			{
-				alwaysSearchedExtensionsSet.Add( "shadergraph" );
-				alwaysSearchedExtensionsSet.Add( "shadersubgraph" );
-			}
-#endif
-
-#if ASSET_USAGE_VFX_GRAPH
-			if( searchTextureReferences || searchVFXGraphs )
-			{
-				alwaysSearchedExtensionsSet.Add( "vfx" );
-				alwaysSearchedExtensionsSet.Add( "vfxoperator" );
-				alwaysSearchedExtensionsSet.Add( "vfxblock" );
 			}
 #endif
 		}
@@ -948,23 +884,6 @@ namespace AssetUsageDetectorNamespace
 			return PopReferenceNode( obj );
 		}
 
-		private ReferenceNode SearchBlendTree( object obj )
-		{
-			BlendTree blendTree = (BlendTree) obj;
-			ReferenceNode referenceNode = PopReferenceNode( blendTree );
-
-			ChildMotion[] children = blendTree.children;
-			for( int i = 0; i < children.Length; i++ )
-			{
-				referenceNode.AddLinkTo( SearchObject( children[i].motion ), "Motion" );
-
-				if( searchParameters.searchRefactoring != null && children[i].motion as AnimationClip && objectsToSearchSet.Contains( children[i].motion ) )
-					searchParameters.searchRefactoring( new AnimationSystemMatch( blendTree, children[i].motion, ( newValue ) => children[i].motion = (Motion) newValue ) );
-			}
-
-			return referenceNode;
-		}
-
 		private ReferenceNode SearchAnimationClip( object obj )
 		{
 			AnimationClip clip = (AnimationClip) obj;
@@ -1015,44 +934,6 @@ namespace AssetUsageDetectorNamespace
 			if( modifiedEvents )
 				AnimationUtility.SetAnimationEvents( clip, events );
 
-			return referenceNode;
-		}
-
-		// TerrainData's properties like tree/detail/layer definitions aren't exposed to SerializedObject so use reflection instead
-		private ReferenceNode SearchTerrainData( object obj )
-		{
-			ReferenceNode referenceNode = PopReferenceNode( obj );
-			SearchVariablesWithReflection( referenceNode );
-			return referenceNode;
-		}
-
-		private ReferenceNode SearchLightmapSettings( object obj )
-		{
-			ReferenceNode referenceNode = PopReferenceNode( obj );
-
-			referenceNode.AddLinkTo( SearchObject( LightmapSettings.lightProbes ), "Light Probes" );
-
-			LightmapData[] lightmaps = LightmapSettings.lightmaps;
-			if( lightmaps != null )
-			{
-				for( int i = 0; i < lightmaps.Length; i++ )
-					referenceNode.AddLinkTo( SearchObject( lightmaps[i] ), "Lightmap" );
-			}
-
-			SearchVariablesWithSerializedObject( referenceNode, true );
-			return referenceNode;
-		}
-
-		private ReferenceNode SearchRenderSettings( object obj )
-		{
-			ReferenceNode referenceNode = PopReferenceNode( obj );
-
-#if UNITY_2021_2_OR_NEWER
-			referenceNode.AddLinkTo( SearchObject( defaultReflectionProbeGetter() ), "Default Reflection Probe" );
-#else
-			referenceNode.AddLinkTo( SearchObject( ReflectionProbe.defaultTexture ), "Default Reflection Probe" );
-#endif
-			SearchVariablesWithSerializedObject( referenceNode, true );
 			return referenceNode;
 		}
 
@@ -1182,150 +1063,6 @@ namespace AssetUsageDetectorNamespace
 					}
 				}
 			}
-
-			return referenceNode;
-		}
-#endif
-
-#if UNITY_2018_1_OR_NEWER
-		// Searches Shader Graph assets for references
-		private ReferenceNode SearchShaderGraph( object obj )
-		{
-			if( !searchTextureReferences && !searchShaderGraphsForSubGraphs && shaderIncludesToSearchSet.Count == 0 )
-				return null;
-
-			ReferenceNode referenceNode = PopReferenceNode( obj );
-
-			// Shader Graph assets are JSON files, they must be crawled manually to find references
-			string graphJson = File.ReadAllText( AssetDatabase.GetAssetPath( (Object) obj ) );
-			if( graphJson.IndexOf( "\"m_ObjectId\"", 0, Mathf.Min( 200, graphJson.Length ) ) >= 0 )
-			{
-				// New Shader Graph serialization format is used: https://github.com/Unity-Technologies/Graphics/pull/222
-				// Iterate over all these occurrences:   "guid\": \"GUID_VALUE\" (\" is used instead of " because it is a nested JSON)
-				IterateOverValuesInString( graphJson, new string[] { "\"guid\\\"" }, '"', ( guid ) =>
-				{
-					if( guid.Length > 1 )
-					{
-						if( guid[guid.Length - 1] == '\\' )
-							guid = guid.Substring( 0, guid.Length - 1 );
-
-						string referencePath = AssetDatabase.GUIDToAssetPath( guid );
-						if( !string.IsNullOrEmpty( referencePath ) && assetsToSearchPathsSet.Contains( referencePath ) )
-						{
-							Object reference = AssetDatabase.LoadMainAssetAtPath( referencePath );
-							if( objectsToSearchSet.Contains( reference ) )
-								referenceNode.AddLinkTo( GetReferenceNode( reference ), "Used in graph" );
-						}
-					}
-				} );
-
-				if( shaderIncludesToSearchSet.Count > 0 )
-				{
-					// Iterate over all these occurrences:   "m_FunctionSource": "GUID_VALUE" (this one is not nested JSON)
-					IterateOverValuesInString( graphJson, new string[] { "\"m_FunctionSource\"" }, '"', ( guid ) =>
-					{
-						string referencePath = AssetDatabase.GUIDToAssetPath( guid );
-						if( !string.IsNullOrEmpty( referencePath ) && assetsToSearchPathsSet.Contains( referencePath ) )
-						{
-							Object reference = AssetDatabase.LoadMainAssetAtPath( referencePath );
-							if( objectsToSearchSet.Contains( reference ) )
-								referenceNode.AddLinkTo( GetReferenceNode( reference ), "Used in node: Custom Function" );
-						}
-					} );
-				}
-			}
-			else
-			{
-				// Old Shader Graph serialization format is used. Although we could use the same search method as the new serialization format (which
-				// is potentially faster), this alternative search method yields more information about references
-				ShaderGraphReferences shaderGraph = JsonUtility.FromJson<ShaderGraphReferences>( graphJson );
-
-				if( shaderGraph.m_SerializedProperties != null )
-				{
-					for( int i = shaderGraph.m_SerializedProperties.Count - 1; i >= 0; i-- )
-					{
-						string propertyJSON = shaderGraph.m_SerializedProperties[i].JSONnodeData;
-						if( string.IsNullOrEmpty( propertyJSON ) )
-							continue;
-
-						ShaderGraphReferences.PropertyData propertyData = JsonUtility.FromJson<ShaderGraphReferences.PropertyData>( propertyJSON );
-						if( propertyData.m_Value == null )
-							continue;
-
-						string texturePath = propertyData.m_Value.GetTexturePath();
-						if( string.IsNullOrEmpty( texturePath ) || !assetsToSearchPathsSet.Contains( texturePath ) )
-							continue;
-
-						Texture texture = AssetDatabase.LoadAssetAtPath<Texture>( texturePath );
-						if( objectsToSearchSet.Contains( texture ) )
-							referenceNode.AddLinkTo( GetReferenceNode( texture ), "Default Texture: " + propertyData.GetName() );
-					}
-				}
-
-				if( shaderGraph.m_SerializableNodes != null )
-				{
-					for( int i = shaderGraph.m_SerializableNodes.Count - 1; i >= 0; i-- )
-					{
-						string nodeJSON = shaderGraph.m_SerializableNodes[i].JSONnodeData;
-						if( string.IsNullOrEmpty( nodeJSON ) )
-							continue;
-
-						ShaderGraphReferences.NodeData nodeData = JsonUtility.FromJson<ShaderGraphReferences.NodeData>( nodeJSON );
-						if( !string.IsNullOrEmpty( nodeData.m_FunctionSource ) )
-						{
-							string customFunctionPath = AssetDatabase.GUIDToAssetPath( nodeData.m_FunctionSource );
-							if( !string.IsNullOrEmpty( customFunctionPath ) && assetsToSearchPathsSet.Contains( customFunctionPath ) )
-							{
-								Object customFunction = AssetDatabase.LoadMainAssetAtPath( customFunctionPath );
-								if( objectsToSearchSet.Contains( customFunction ) )
-									referenceNode.AddLinkTo( GetReferenceNode( customFunction ), "Used in node: " + nodeData.m_Name );
-							}
-						}
-
-						if( searchShaderGraphsForSubGraphs )
-						{
-							string subGraphPath = nodeData.GetSubGraphPath();
-							if( !string.IsNullOrEmpty( subGraphPath ) && assetsToSearchPathsSet.Contains( subGraphPath ) )
-							{
-								Object subGraph = AssetDatabase.LoadMainAssetAtPath( subGraphPath );
-								if( objectsToSearchSet.Contains( subGraph ) )
-									referenceNode.AddLinkTo( GetReferenceNode( subGraph ), "Used as Sub-graph" );
-							}
-						}
-
-						if( nodeData.m_SerializableSlots == null )
-							continue;
-
-						for( int j = nodeData.m_SerializableSlots.Count - 1; j >= 0; j-- )
-						{
-							string nodeSlotJSON = nodeData.m_SerializableSlots[j].JSONnodeData;
-							if( string.IsNullOrEmpty( nodeSlotJSON ) )
-								continue;
-
-							string texturePath = JsonUtility.FromJson<ShaderGraphReferences.NodeSlotData>( nodeSlotJSON ).GetTexturePath();
-							if( string.IsNullOrEmpty( texturePath ) || !assetsToSearchPathsSet.Contains( texturePath ) )
-								continue;
-
-							Texture texture = AssetDatabase.LoadAssetAtPath<Texture>( texturePath );
-							if( objectsToSearchSet.Contains( texture ) )
-								referenceNode.AddLinkTo( GetReferenceNode( texture ), "Used in node: " + nodeData.m_Name );
-						}
-					}
-				}
-			}
-
-			return referenceNode;
-		}
-#endif
-
-#if ASSET_USAGE_VFX_GRAPH
-		private ReferenceNode SearchVFXGraphAsset( object obj )
-		{
-			ReferenceNode referenceNode = PopReferenceNode( obj );
-
-			object vfxResource = vfxResourceGetter( AssetDatabase.GetAssetPath( (Object) obj ) );
-			foreach( Object vfxResourceContent in (Object[]) vfxResourceContentsGetter.Invoke( vfxResource, null ) )
-				referenceNode.AddLinkTo( SearchObject( vfxResourceContent ) );
 
 			return referenceNode;
 		}
@@ -1510,16 +1247,6 @@ namespace AssetUsageDetectorNamespace
 									{
 										propertyValue = GetAddressablesAssetReferenceValue( assetReference );
 										searchResult = SearchObject( PreferablyGameObject( propertyValue ) );
-										enterChildren = false;
-									}
-									else
-#endif
-#if ASSET_USAGE_VFX_GRAPH
-									if( vfxSerializableObjectValueGetter != null && iterator.type == "VFXSerializableObject" && GetRawSerializedPropertyValue( iterator ) is object vfxSerializableObject )
-									{
-										object vfxSerializableObjectValue = vfxSerializableObjectValueGetter.Invoke( vfxSerializableObject, null );
-										propertyValue = vfxSerializableObjectValue as Object;
-										searchResult = SearchObject( PreferablyGameObject( vfxSerializableObjectValue ) );
 										enterChildren = false;
 									}
 									else

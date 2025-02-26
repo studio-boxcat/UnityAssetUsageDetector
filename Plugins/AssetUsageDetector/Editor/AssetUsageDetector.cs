@@ -31,7 +31,6 @@ namespace AssetUsageDetectorNamespace
 			public SceneSearchMode searchInScenes = SceneSearchMode.AllScenes;
 			public Object[] searchInScenesSubset = null;
 			public Object[] excludedScenesFromSearch = null;
-			public bool searchInSceneLightingSettings = true;
 			public bool searchInAssetsFolder = true;
 			public Object[] searchInAssetsSubset = null;
 			public Object[] excludedAssetsFromSearch = null;
@@ -949,16 +948,6 @@ namespace AssetUsageDetectorNamespace
 			GameObject[] rootGameObjects = scene.GetRootGameObjects();
 			for( int i = 0; i < rootGameObjects.Length; i++ )
 				SearchGameObjectRecursively( rootGameObjects[i] );
-
-			// Search through Lighting Settings (it requires changing the active scene but don't do that in play mode)
-			if( searchParameters.searchInSceneLightingSettings && ( !isInPlayMode || SceneManager.GetActiveScene() == scene ) )
-			{
-				if( !isInPlayMode && EditorSceneManager.GetActiveScene() != scene )
-					EditorSceneManager.SetActiveScene( scene );
-
-				BeginSearchObject( lightmapSettingsGetter() );
-				BeginSearchObject( renderSettingsGetter() );
-			}
 
 			// If no references are found in the scene and if the scene is not part of the initial scene setup, close it
 			if( currentSearchResultGroup.NumberOfReferences == 0 )
